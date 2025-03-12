@@ -1,50 +1,45 @@
-﻿using System.Data.Common;
+﻿using _2DEnvCreator_API.Repositories;
 using Microsoft.AspNetCore.Identity;
-using Microsoft.AspNetCore.Mvc;
-using Microsoft.Data.SqlClient;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Add services to the container.
+builder.Services.AddHttpContextAccessor(); // Register HTTP Context Accessor
+builder.Services.AddControllers();
+
+// Register the authentication service as scoped.
+builder.Services.AddScoped<IAuthenticationService, AspNetIdentityAuthenticationService>();
 
 var sqlConnectionString = builder.Configuration["SqlConnectionString"];
 var sqlConnectionStringFound = !string.IsNullOrEmpty(sqlConnectionString);
 
-// Adding the HTTP Context accessor to be injected. This is needed by the AspNetIdentityUserRepository
-// to resolve the current user.
-builder.Services.AddHttpContextAccessor();
-builder.Services.AddTransient<IAuthenticationService, AspNetIdentityAuthenticationService>();
-
-// 
 builder.Services.AddAuthorization();
-builder.Services
-    .AddIdentityApiEndpoints<IdentityUser>()
-    .AddDapperStores(options =>
-    {
-        options.ConnectionString = sqlConnectionString;
-    });
+builder.Services.AddIdentityApiEndpoints<IdentityUser>(options =>
+{
+    options.User.RequireUniqueEmail = true;
+    options.Password.RequiredLength = 10;
+})
+.AddRoles<IdentityRole>() // Adding role support if needed
+.AddDapperStores(options =>
+{
+    options.ConnectionString = sqlConnectionString;
+});
 
-// Add services to the container.
-builder.Services.AddControllers();
-// Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
-builder.Services.AddOpenApi();
+// Register your repository.
+builder.Services.AddTransient<IEnvironmentRepository, EnvironmentRepository>(o => new EnvironmentRepository(sqlConnectionString));
 
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
-if (app.Environment.IsDevelopment())
-{
-    app.MapOpenApi();
-}
-
-app.MapGet("/", () => $"The API is up . Connection string found: {(sqlConnectionStringFound ? "✅" : "❌")}");
-
 app.UseHttpsRedirection();
 
-app.UseRouting();
-
+// Ensure you call authentication before authorization.
+app.UseAuthentication();
 app.UseAuthorization();
+
+app.MapGet("/", () => $"The API is up. Connection string found: {(sqlConnectionStringFound ? "✅" : "❌")}");
 
 app.MapGroup("/account").MapIdentityApi<IdentityUser>();
 
-app.MapControllers();
+app.MapControllers().RequireAuthorization();
 
 app.Run();
