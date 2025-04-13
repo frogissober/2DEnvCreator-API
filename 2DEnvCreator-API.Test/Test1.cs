@@ -1,40 +1,42 @@
-﻿using Moq;
-using Microsoft.VisualStudio.TestTools.UnitTesting;
+﻿using Microsoft.VisualStudio.TestTools.UnitTesting;
+using _2DEnvCreator_API.Models;
+using _2DEnvCreator_API.Controllers;
+using Moq;
 using Microsoft.AspNetCore.Mvc;
 using System.Collections.Generic;
 using System.Threading.Tasks;
-using _2DEnvCreator_API.Controllers;
-using _2DEnvCreator_API.Models;
-using _2DEnvCreator_API.Repositories;
+using _2DEnvCreator_API.Interfaces;
 using Microsoft.Extensions.Logging;
 
 namespace _2DEnvCreator_API.Test
 {
     [TestClass]
-    public sealed class EnvironmentControllerTests
+    public class EnvironmentControllerTests
     {
-        private const string TestUserId = "83430dee-3245-4559-8e41-22043eac0c7e";
-
         [TestMethod]
         public async Task GetEnvironments_ReturnsOk_WithEnvironments()
         {
+            // Arrange
             var mockRepository = new Mock<IEnvironmentRepository>();
             var mockAuthService = new Mock<IAuthenticationService>();
             var mockLogger = new Mock<ILogger<EnvironmentController>>();
 
             var controller = new EnvironmentController(mockRepository.Object, mockAuthService.Object, mockLogger.Object);
 
+            var userId = "c52b5576-4bc2-4302-a400-f13af1cd43af";
             var environments = new List<Environment2D>
             {
-                new Environment2D { Id = 1, Name = "TestEnv1" },
-                new Environment2D { Id = 2, Name = "TestEnv2" }
+                new Environment2D { Name = "TestEnv1", Height = 100, Width = 100 },
+                new Environment2D { Name = "TestEnv2", Height = 200, Width = 200 }
             };
 
-            mockAuthService.Setup(auth => auth.GetCurrentAuthenticatedUserId()).Returns(TestUserId);
-            mockRepository.Setup(repo => repo.GetEnvironmentsByUserId(TestUserId)).ReturnsAsync(environments);
+            mockAuthService.Setup(auth => auth.GetCurrentAuthenticatedUserId()).Returns(userId);
+            mockRepository.Setup(repo => repo.GetEnvironmentsByUserId(userId)).ReturnsAsync(environments);
 
+            // Act
             var result = await controller.GetEnvironments();
 
+            // Assert
             var okResult = result.Result as OkObjectResult;
             Assert.IsNotNull(okResult);
             var returnedEnvironments = okResult.Value as List<Environment2D>;
@@ -43,46 +45,64 @@ namespace _2DEnvCreator_API.Test
         }
 
         [TestMethod]
-        public async Task GetEnvironment_ReturnsNotFound_WhenEnvironmentDoesNotExist()
+        public async Task CreateEnvironment_ReturnsBadRequest_WhenExceedingMaxWorlds()
         {
+            // Arrange
             var mockRepository = new Mock<IEnvironmentRepository>();
             var mockAuthService = new Mock<IAuthenticationService>();
             var mockLogger = new Mock<ILogger<EnvironmentController>>();
 
             var controller = new EnvironmentController(mockRepository.Object, mockAuthService.Object, mockLogger.Object);
 
-            var environmentId = 1;
+            var userId = "c52b5576-4bc2-4302-a400-f13af1cd43af";
+            var existingWorlds = new List<Environment2D>();
+            for (int i = 0; i < 5; i++)
+            {
+                existingWorlds.Add(new Environment2D { Name = $"World{i}", Height = 100, Width = 100 });
+            }
 
-            mockRepository.Setup(repo => repo.GetEnvironmentById(environmentId)).ReturnsAsync((Environment2D?)null);
+            mockAuthService.Setup(auth => auth.GetCurrentAuthenticatedUserId()).Returns(userId);
+            mockRepository.Setup(repo => repo.GetEnvironmentsByUserId(userId)).ReturnsAsync(existingWorlds);
 
-            var result = await controller.GetEnvironment(environmentId);
+            var newWorld = new Environment2D { Name = "NewWorld", Height = 200, Width = 200 };
 
-            var notFoundResult = result.Result as NotFoundResult;
-            Assert.IsNotNull(notFoundResult);
+            // Act
+            var result = await controller.CreateEnvironment(newWorld);
+
+            // Assert
+            var badRequestResult = result.Result as BadRequestObjectResult;
+            Assert.IsNotNull(badRequestResult);
+            Assert.AreEqual("Maximum of 5 worlds reached", badRequestResult.Value);
         }
 
         [TestMethod]
-        public async Task CreateEnvironment_ReturnsCreated_WithEnvironment()
+        public async Task CreateEnvironment_ReturnsBadRequest_WhenNameAlreadyExists()
         {
+            // Arrange
             var mockRepository = new Mock<IEnvironmentRepository>();
             var mockAuthService = new Mock<IAuthenticationService>();
             var mockLogger = new Mock<ILogger<EnvironmentController>>();
 
             var controller = new EnvironmentController(mockRepository.Object, mockAuthService.Object, mockLogger.Object);
 
-            var environment = new Environment2D { Name = "NewEnv", Height = 100, Width = 100 };
-            var createdEnvironment = new Environment2D { Id = 1, Name = "NewEnv", Height = 100, Width = 100 };
+            var userId = "user1";
+            var existingWorlds = new List<Environment2D>
+            {
+                new Environment2D { Name = "ExistingWorld", Height = 100, Width = 100 }
+            };
 
-            mockAuthService.Setup(auth => auth.GetCurrentAuthenticatedUserId()).Returns(TestUserId);
-            mockRepository.Setup(repo => repo.CreateEnvironment(environment, TestUserId)).ReturnsAsync(createdEnvironment);
+            mockAuthService.Setup(auth => auth.GetCurrentAuthenticatedUserId()).Returns(userId);
+            mockRepository.Setup(repo => repo.GetEnvironmentsByUserId(userId)).ReturnsAsync(existingWorlds);
 
-            var result = await controller.CreateEnvironment(environment);
+            var newWorld = new Environment2D { Name = "ExistingWorld", Height = 200, Width = 200 };
 
-            var createdAtActionResult = result.Result as CreatedAtActionResult;
-            Assert.IsNotNull(createdAtActionResult);
-            var returnedEnvironment = createdAtActionResult.Value as Environment2D;
-            Assert.IsNotNull(returnedEnvironment);
-            Assert.AreEqual(createdEnvironment.Id, returnedEnvironment.Id);
+            // Act
+            var result = await controller.CreateEnvironment(newWorld);
+
+            // Assert
+            var badRequestResult = result.Result as BadRequestObjectResult;
+            Assert.IsNotNull(badRequestResult);
+            Assert.AreEqual("World name must be unique", badRequestResult.Value);
         }
     }
 }

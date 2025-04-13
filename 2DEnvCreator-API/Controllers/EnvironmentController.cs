@@ -12,6 +12,7 @@ namespace _2DEnvCreator_API.Controllers
         private readonly IEnvironmentRepository _environmentRepository;
         private readonly IAuthenticationService _authenticationService;
         private readonly ILogger<EnvironmentController> _logger;
+        private const int MaxWorlds = 5;
 
         public EnvironmentController(IEnvironmentRepository environmentRepository, IAuthenticationService authenticationService, ILogger<EnvironmentController> logger)
         {
@@ -34,7 +35,6 @@ namespace _2DEnvCreator_API.Controllers
             var environments = await _environmentRepository.GetEnvironmentsByUserId(userId);
             return Ok(environments);
         }
-
 
         [HttpGet("{id}")]
         public async Task<ActionResult<Environment2D>> GetEnvironment(int id)
@@ -63,6 +63,21 @@ namespace _2DEnvCreator_API.Controllers
             {
                 _logger.LogWarning("Invalid model state");
                 return BadRequest(ModelState);
+            }
+
+            // Check maximum worlds limit
+            var existingWorlds = await _environmentRepository.GetEnvironmentsByUserId(userId);
+            if (existingWorlds.Count() >= MaxWorlds)
+            {
+                _logger.LogWarning($"User {userId} attempted to create more than {MaxWorlds} worlds");
+                return BadRequest($"Maximum of {MaxWorlds} worlds reached");
+            }
+
+            // Check for unique name
+            if (existingWorlds.Any(w => w.Name.Equals(environment.Name, StringComparison.OrdinalIgnoreCase)))
+            {
+                _logger.LogWarning($"User {userId} attempted to create a world with duplicate name: {environment.Name}");
+                return BadRequest("World name must be unique");
             }
 
             var createdEnvironment = await _environmentRepository.CreateEnvironment(environment, userId);
